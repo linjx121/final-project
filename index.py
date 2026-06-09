@@ -1,3 +1,6 @@
+from google import genai
+from google.genai import types 
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -84,38 +87,51 @@ def menu():
     for doc in docs:
         Result += str(doc.to_dict()) + "<br>"
     return Result
-
+    
 @app.route("/store")
 def store():
+    # 確保是 storesearch (去掉了中間的 re)
     url = "https://www.starbucks.com.tw/stores/storesearch.jspx"
+    
     payload = {
         "all": "true"
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    Data = requests.post(url, data=payload, headers=headers)
-    Data.encoding = "utf-8"
-    print(Data.status_code)
-    print(Data.text[:5000])
-    soup = BeautifulSoup(Data.text, "html.parser")
-    store_items = soup.select(".filmListAllX li")
     
-    db = firestore.client()
-    count = 0
-    
-    for store_item in store_items:
-        title_element = store_item.find("div", class_="filmtitle")
-        address_element = store_item.find("div", class_="runtime")
-        if title_element and address_element:
-            title = title_element.text.strip()
-            address = address_element.text.replace("地址 :", "").strip()
-            store_name = title.replace("/", "-")
-            doc = {
-                "title": title,
-                "address": address
-            }
-    
-            db.collection("門市分店").document(store_name).set(doc)
-            count += 1
-    return f"爬蟲及存檔完畢！共成功匯入 {count} 筆門市資料至 Firebase。"
+    try:
+        Data = requests.post(url, data=payload, headers=headers, timeout=10)
+        Data.encoding = "utf-8"
+        
+        soup = BeautifulSoup(Data.text, "html.parser")
+        store_items = soup.select(".filmListAllX li")
+        
+        # 這裡直接呼叫，不要再重複 initialize_app 囉
+        db = firestore.client()
+        count = 0
+        
+        for store_item in store_items:
+            title_element = store_item.find("div", class_="filmtitle")
+            address_element = store_item.find("div", class_="runtime")
+            
+            if title_element and address_element:
+                title = title_element.text.strip()
+                address = address_element.text.replace("地址 :", "").strip()
+                
+                # 防止特殊符號導致 Firebase 報錯
+                store_name = title.replace("/", "-").strip()
+                
+                doc = {
+                    "title": title,
+                    "address": address
+                }
+                
+                # 寫入 Firebase
+                db.collection("門市分店").document(store_name).set(doc)
+                count += 1
+        
+        return f"爬蟲及存檔完畢！共成功匯入 {count} 筆門市資料至 Firebase。"
+        
+    except Exception as e:
+        return f"程式執行失敗，錯誤原因: {str(e)}", 500
