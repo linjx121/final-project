@@ -12,17 +12,20 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# 判斷是在 Vercel 還是本地
-if os.path.exists('serviceAccountKey.json'):
-    # 本地環境：讀取檔案
-    cred = credentials.Certificate('serviceAccountKey.json')
-else:
-    # 雲端環境：從環境變數讀取 JSON 字串
+# 檢查 Firebase 是否已經初始化過，避免重複初始化錯誤
+if not firebase_admin._apps:
+    # 優先嘗試讀取雲端環境變數
     firebase_config = os.getenv('FIREBASE_CONFIG')
-    cred_dict = json.loads(firebase_config)
-    cred = credentials.Certificate(cred_dict)
-
-firebase_admin.initialize_app(cred)
+    
+    if firebase_config:
+        # 如果有環境變數（Vercel 環境），將字串轉回字典解析
+        cred_dict = json.loads(firebase_config)
+        cred = credentials.Certificate(cred_dict)
+    else:
+        # 如果沒有環境變數（本地開發環境），則讀取本地檔案
+        cred = credentials.Certificate("serviceAccountKey.json")
+        
+    firebase_admin.initialize_app(cred)
 
 app = Flask(__name__)
 
