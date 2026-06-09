@@ -37,9 +37,13 @@ def webhook():
     req = request.get_json(force=True)
     action =  req["queryResult"]["action"]
 
-    if action == "typeChoice":
-    rate = req["queryResult"]["parameters"].get("type", "")
-    
+   if action == "typeChoice":
+    parameters = req["queryResult"].get("parameters", {})
+    rate = parameters.get("type", "")
+   
+    if not rate:
+        return make_response(jsonify({"fulfillmentText": "您打算喝甚麼種類的飲品呢？（例如：那堤、咖啡飲品、星冰樂）"}))
+        
     info = f"我是星巴克機器人，為您找到相關飲品資訊：\n\n"
     db = firestore.client()
     collection_ref = db.collection("星巴克")
@@ -47,26 +51,33 @@ def webhook():
     
     result = ""
     found_any = False
+  
+    rate_str = str(rate).strip()
     
     for doc in docs:
         drink_dict = doc.to_dict()
         
-        db_type = drink_dict.get("type", "")
-        db_name = drink_dict.get("name", "")
-        
-        if rate in db_type or rate in db_name:
+        db_type = str(drink_dict.get("type", ""))
+        db_name = str(drink_dict.get("name", ""))
+       
+        if rate_str in db_type or rate_str in db_name:
             found_any = True
+         
+            price = drink_dict.get("how much(large size)", drink_dict.get("how much", "暫無資料"))
+            coffeein = drink_dict.get("coffeein", "暫無資料")
+            
             result += f"飲品名稱：{db_name}\n"
-            result += f"價格(大杯)：{drink_dict.get('how much(large size)', '暫無資料')} 元\n"
-            result += f"咖啡因：{drink_dict.get('coffeein', '暫無資料')} mg\n"
+            result += f"價格(大杯)：{price} 元\n"
+            result += f"咖啡因含量：{coffeein} mg\n"
             result += "-------------------\n"
             
     if found_any:
         info += result
     else:
-        info = f"抱歉，目前資料庫找不到與「{rate}」相關的飲品。"
+        info = f"抱歉，目前我的資料庫裡還沒有與「{rate_str}」相關的飲品。您可以試試搜尋其他飲品！"
 
     return make_response(jsonify({"fulfillmentText": info}))
+
 
 
 @app.route("/menu")
