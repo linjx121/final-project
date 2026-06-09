@@ -39,7 +39,7 @@ def webhook():
 
     if (action == "typeChoice"):
         rate =  req["queryResult"]["parameters"]["type"]
-        info = "我是星巴克機器人，您選擇飲品是：" + type + "，推薦飲品：\n"
+        info = f"我是星巴克機器人，您選擇飲品是：{type}，推薦飲品：\n"
         db = firestore.client()
         collection_ref = db.collection("星巴克")
         docs = collection_ref.get()
