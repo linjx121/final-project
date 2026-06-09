@@ -287,6 +287,7 @@ docs =[
 # doc_ref = db.collection("星巴克").document("Final project")
 # doc_ref.set(doc)
 
-collection_ref = db.collection("星巴克")
 for doc in docs:
-  collection_ref.add(doc)
+    drink_name = doc["name"]
+    db.collection("星巴克").document(drink_name).set(doc)
+    print(f"成功寫入飲品：{drink_name}")
