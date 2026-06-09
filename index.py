@@ -37,42 +37,34 @@ def webhook():
     req = request.get_json(force=True)
     action =  req["queryResult"]["action"]
 
-    if (action == "typeChoice"):
-        rate =  req["queryResult"]["parameters"]["type"]
-        info = f"我是星巴克機器人，您選擇飲品是：{type}，推薦飲品：\n"
-        db = firestore.client()
-        collection_ref = db.collection("星巴克")
-        docs = collection_ref.get()
-        result = ""
-        for doc in docs:
-            dict = doc.to_dict()
-            if rate in dict["type"]:
-                result += "價格：" + dict["how much(large size)"] + "\n"
-                result += "咖啡因含量：" + dict["coffeein"] + "\n\n"
+    if action == "typeChoice":
+    rate = req["queryResult"]["parameters"].get("type", "")
+    
+    info = f"我是星巴克機器人，為您找到相關飲品資訊：\n\n"
+    db = firestore.client()
+    collection_ref = db.collection("星巴克")
+    docs = collection_ref.get()
+    
+    result = ""
+    found_any = False
+    
+    for doc in docs:
+        drink_dict = doc.to_dict()
+        
+        db_type = drink_dict.get("type", "")
+        db_name = drink_dict.get("name", "")
+        
+        if rate in db_type or rate in db_name:
+            found_any = True
+            result += f"飲品名稱：{db_name}\n"
+            result += f"價格(大杯)：{drink_dict.get('how much(large size)', '暫無資料')} 元\n"
+            result += f"咖啡因：{drink_dict.get('coffeein', '暫無資料')} mg\n"
+            result += "-------------------\n"
+            
+    if found_any:
         info += result
-
-    elif(action == "input.unknown"):
-        #info = req["queryResult"]["queryText"]
-        instruction_text = (
-            "你是一個熱心且知識豐富的專業智慧助理。"
-            "對於使用者的提問，請回覆重點的關鍵字，不要重述問題。"         
-        )
-
-
-        ai_config = types.GenerateContentConfig(
-            max_output_tokens=500, 
-            system_instruction=instruction_text
-        )
-        response = client.models.generate_content(
-            model='gemini-3.1-flash-lite', 
-            contents=req["queryResult"]["queryText"],
-            config=ai_config,
-        )
-
-        if response.text:
-            info = response.text
-        else:
-            info = "抱歉，我現在無法生成回應，請稍後再試。"
+    else:
+        info = f"抱歉，目前資料庫找不到與「{rate}」相關的飲品。"
 
     return make_response(jsonify({"fulfillmentText": info}))
 
