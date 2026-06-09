@@ -79,9 +79,43 @@ def menu():
     Result = ""
     db = firestore.client()
     collection_ref = db.collection("星巴克")
-    
     docs = collection_ref.order_by("name", direction=firestore.Query.DESCENDING).limit(5).get()
     
     for doc in docs:
         Result += str(doc.to_dict()) + "<br>"
     return Result
+
+@app.route("/store")
+def store():
+    url = "https://www.starbucks.com.tw/stores/storesearch.jspx"
+    payload = {
+        "all": "true"
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    Data = requests.post(url, data=payload, headers=headers)
+    Data.encoding = "utf-8"
+    print(Data.status_code)
+    print(Data.text[:5000])
+    soup = BeautifulSoup(Data.text, "html.parser")
+    store_items = soup.select(".filmListAllX li")
+    
+    db = firestore.client()
+    count = 0
+    
+    for store_item in store_items:
+        title_element = store_item.find("div", class_="filmtitle")
+        address_element = store_item.find("div", class_="runtime")
+        if title_element and address_element:
+            title = title_element.text.strip()
+            address = address_element.text.replace("地址 :", "").strip()
+            store_name = title.replace("/", "-")
+            doc = {
+                "title": title,
+                "address": address
+            }
+    
+            db.collection("門市分店").document(store_name).set(doc)
+            count += 1
+    return f"爬蟲及存檔完畢！共成功匯入 {count} 筆門市資料至 Firebase。"
