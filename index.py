@@ -1,29 +1,24 @@
-from google import genai
-
-from google.genai import types 
-
-import requests
-from bs4 import BeautifulSoup
-
-from flask import Flask, render_template,request,make_response,jsonify
-from datetime import datetime
-
 import os
 import json
-from firebase_admin import credentials, initialize_app
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
+from flask import Flask, render_template, request, make_response, jsonify
 
-# 讀取環境變數中的 Firebase 金鑰字串
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+
 firebase_creds_str = os.environ.get('FIREBASE_CREDENTIALS')
 
-if firebase_creds_str:
-    # 將字串轉換為字典 (Dict) 格式
-    cred_dict = json.loads(firebase_creds_str)
-    cred = credentials.Certificate(cred_dict)
-else:
-    # 備用方案：如果本地跑還是想用檔案形式
-    cred = credentials.Certificate("serviceAccountKey.json")
-     
-    initialize_app(cred)
+if not firebase_admin._apps:
+    if firebase_creds_str:
+        cred_dict = json.loads(firebase_creds_str)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+    else:
+        cred = credentials.Certificate("serviceAccountKey.json")
+        firebase_admin.initialize_app(cred)
 
 app = Flask(__name__)
 
@@ -41,10 +36,11 @@ def webdemo():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     req = request.get_json(force=True)
-    action = req["queryResult"]["action"]
+    query_result = req.get("queryResult", {})
+    action = query_result.get("action", "")
 
     if action == "typeChoice":
-        parameters = req["queryResult"].get("parameters", {})
+        parameters = query_result.get("parameters", {})
         rate = parameters.get("type", "")
         
         if isinstance(rate, list):
@@ -53,13 +49,9 @@ def webhook():
         rate_str = str(rate).strip()
         
         db = firestore.client()
-        
-        target_collection = "那堤" 
-        if rate_str != "" and rate_str != "飲品查詢" and rate_str != "咖啡飲品":
-            target_collection = rate_str
-
-        docs = db.collection_group(target_collection).get()
-        
+        collection_ref = db.collection("星巴克")
+        docs = collection_ref.get()
+      
         if rate_str == "" or rate_str == "飲品查詢" or rate_str == "咖啡飲品":
             info = f"為您列出星巴克精選飲品菜單：\n"
         else:
@@ -71,74 +63,29 @@ def webhook():
         
         for doc in docs:
             drink_dict = doc.to_dict()
-            db_name = str(drink_dict.get("name", doc.id)).strip()
-            price = drink_dict.get("how much(large size)", drink_dict.get("how much", "暫無資料"))
-            coffeein = drink_dict.get("coffeein", "暫無資料") 
             
-            found_any = True
-            result += f"飲品名稱：{db_name}\n"
-            result += f"價格(大杯)：{price} 元\n"
-            result += f"咖啡因含量：{coffeein} mg\n"
-            result += "---------------------------------\n"
+            db_type = str(drink_dict.get("type", "")).strip()
+            db_name = str(drink_dict.get("name", "")).strip()
+            
+            if rate_str == "" or rate_str == "飲品查詢" or rate_str == "咖啡飲品" or (rate_str in db_type) or (rate_str in db_name):
+                found_any = True
+        
+                price = drink_dict.get("how much(large size)", "暫無資料")
+                coffeein = drink_dict.get("coffeein", "暫無資料")
+                
+                result += f"🔹 飲品名稱：{db_name}\n"
+                result += f"💰 價格(大杯)：{price} 元\n"
+                result += f"⚡ 咖啡因含量：{coffeein} mg\n"
+                result += "---------------------------------\n"
                 
         if found_any:
             info += result
         else:
-            info += f"抱歉，目前在「{target_collection}」分類中尚未找到飲料。請確認 Firebase 資料夾名稱是否正確。"
+            info = f"抱歉，目前我的資料庫裡還沒有與「{rate_str}」相關的飲品。您可以試試搜尋其他飲品！"
             
         return make_response(jsonify({"fulfillmentText": info}))
+  
+    return make_response(jsonify({"fulfillmentText": "讓我想想喝甚麼！"}))
 
-@app.route("/menu")
-def menu():
-    Result = ""
-    db = firestore.client()
-    collection_ref = db.collection("星巴克")
-    docs = collection_ref.order_by("name", direction=firestore.Query.DESCENDING).limit(5).get()
-    
-    for doc in docs:
-        Result += str(doc.to_dict()) + "<br>"
-    return Result
-
-@app.route("/store")
-def store():
-    url = "https://www.starbucks.com.tw/stores/storesearch.jspx"
-    
-    payload = {
-        "all": "true"
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
-    try:
-        Data = requests.post(url, data=payload, headers=headers, timeout=10)
-        Data.encoding = "utf-8"
-        
-        soup = BeautifulSoup(Data.text, "html.parser")
-        store_items = soup.select(".filmListAllX li")
-     
-        db = firestore.client()
-        count = 0
-        
-        for store_item in store_items:
-            title_element = store_item.find("div", class_="filmtitle")
-            address_element = store_item.find("div", class_="runtime")
-            
-            if title_element and address_element:
-                title = title_element.text.strip()
-                address = address_element.text.replace("地址 :", "").strip()
-              
-                store_name = title.replace("/", "-").strip()
-                
-                doc = {
-                    "title": title,
-                    "address": address
-                }
-            
-                db.collection("門市分店").document(store_name).set(doc)
-                count += 1
-        
-        return f"爬蟲及存檔完畢！共成功匯入 {count} 筆門市資料至 Firebase。"
-        
-    except Exception as e:
-        return f"程式執行失敗，錯誤原因: {str(e)}", 500
+if __name__ == "__main__":
+    app.run(debug=True)
