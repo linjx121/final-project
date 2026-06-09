@@ -1,4 +1,5 @@
 from google import genai
+
 from google.genai import types 
 
 import requests
@@ -22,7 +23,7 @@ else:
     # 備用方案：如果本地跑還是想用檔案形式
     cred = credentials.Certificate("serviceAccountKey.json")
      
-    firebase_admin.initialize_app(cred)
+    initialize_app(cred)
 
 app = Flask(__name__)
 
@@ -97,7 +98,6 @@ def menu():
 
 @app.route("/store")
 def store():
-    # 確保是 storesearch (去掉了中間的 re)
     url = "https://www.starbucks.com.tw/stores/storesearch.jspx"
     
     payload = {
@@ -113,8 +113,7 @@ def store():
         
         soup = BeautifulSoup(Data.text, "html.parser")
         store_items = soup.select(".filmListAllX li")
-        
-        # 這裡直接呼叫，不要再重複 initialize_app 囉
+     
         db = firestore.client()
         count = 0
         
@@ -125,16 +124,14 @@ def store():
             if title_element and address_element:
                 title = title_element.text.strip()
                 address = address_element.text.replace("地址 :", "").strip()
-                
-                # 防止特殊符號導致 Firebase 報錯
+              
                 store_name = title.replace("/", "-").strip()
                 
                 doc = {
                     "title": title,
                     "address": address
                 }
-                
-                # 寫入 Firebase
+            
                 db.collection("門市分店").document(store_name).set(doc)
                 count += 1
         
