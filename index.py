@@ -30,55 +30,59 @@ app = Flask(__name__)
 def index():
     link = "<a href=/webhook>查詢分類</a><hr>"
     link += "<a href=/menu>菜單</a><hr>"
+    link += "<a href=/webdemo>聊天機器人</a><hr>"
     return link
+
+@app.route("/webdemo")
+def webdemo():
+    return render_template("webdemo.html")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     req = request.get_json(force=True)
     action =  req["queryResult"]["action"]
 
-   if action == "typeChoice":
-    parameters = req["queryResult"].get("parameters", {})
-    rate = parameters.get("type", "")
-   
-    if not rate:
-        return make_response(jsonify({"fulfillmentText": "您打算喝甚麼種類的飲品呢？（例如：那堤、咖啡飲品、星冰樂）"}))
+    if action == "typeChoice":
+        parameters = req["queryResult"].get("parameters", {})
+        rate = parameters.get("type", "")
         
-    info = f"我是星巴克機器人，為您找到相關飲品資訊：\n\n"
-    db = firestore.client()
-    collection_ref = db.collection("星巴克")
-    docs = collection_ref.get()
-    
-    result = ""
-    found_any = False
-  
-    rate_str = str(rate).strip()
-    
-    for doc in docs:
-        drink_dict = doc.to_dict()
-        
-        db_type = str(drink_dict.get("type", ""))
-        db_name = str(drink_dict.get("name", ""))
-       
-        if rate_str in db_type or rate_str in db_name:
-            found_any = True
-         
-            price = drink_dict.get("how much(large size)", drink_dict.get("how much", "暫無資料"))
-            coffeein = drink_dict.get("coffeein", "暫無資料")
+        if not rate:
+            return make_response(jsonify({"fulfillmentText": "您打算喝甚麼種類的飲品呢？\n(例如：那堤、咖啡、星冰樂)"}))
+                
+            db = firestore.client()
+            collection_ref = db.collection("星巴克")
+            docs = collection_ref.get()
             
-            result += f"飲品名稱：{db_name}\n"
-            result += f"價格(大杯)：{price} 元\n"
-            result += f"咖啡因含量：{coffeein} mg\n"
-            result += "-------------------\n"
+            info = f"為您找到「{rate}」的相關飲品結果：\n"
+            info += "━━━━━━━━━━━━━━━\n" # 分隔線
             
-    if found_any:
-        info += result
-    else:
-        info = f"抱歉，目前我的資料庫裡還沒有與「{rate_str}」相關的飲品。您可以試試搜尋其他飲品！"
+            result = ""
+            found_any = False
+            rate_str = str(rate).strip()
+            
+            for doc in docs:
+                drink_dict = doc.to_dict()
+                db_type = str(drink_dict.get("type", ""))
+                db_name = str(drink_dict.get("name", ""))
+              
+                if rate_str in db_type or rate_str in db_name:
+                    found_any = True
+                    
+                    price = drink_dict.get("how much(large size)", "暫無資料")
+                    caffeine = drink_dict.get("coffeein", "暫無資料")
+                  
+                    result += f"飲品：{db_name}\n"
+                    result += f"價格：{price} 元\n"
+                    result += f"咖啡因：{caffeine} mg\n"
+                    result += "--------------------------------\n"
+                    
+            if found_any:
+                info += result
+                info += "\n點擊下方選單可以查詢更多資訊喔！"
+            else:
+                info = f"抱歉，我找不到「{rate_str}」。\n試試看搜尋「那堤」或「咖啡」？"
 
-    return make_response(jsonify({"fulfillmentText": info}))
-
-
+            return make_response(jsonify({"fulfillmentText": info}))
 
 @app.route("/menu")
 def menu():
