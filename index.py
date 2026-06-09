@@ -41,26 +41,29 @@ def webdemo():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     req = request.get_json(force=True)
-    action =  req["queryResult"]["action"]
+    action = req["queryResult"]["action"]
 
     if action == "typeChoice":
         parameters = req["queryResult"].get("parameters", {})
         rate = parameters.get("type", "")
         
-        # 處理 Dialogflow 有時候把參數變成 list 的狀況 (防卡死機制)
         if isinstance(rate, list):
             rate = rate[0] if len(rate) > 0 else ""
             
         rate_str = str(rate).strip()
         
         db = firestore.client()
-        collection_ref = db.collection("星巴克")
-        docs = collection_ref.get()
         
-        if rate_str == "":
+        target_collection = "那堤" 
+        if rate_str != "" and rate_str != "飲品查詢" and rate_str != "咖啡飲品":
+            target_collection = rate_str
+
+        docs = db.collection_group(target_collection).get()
+        
+        if rate_str == "" or rate_str == "飲品查詢" or rate_str == "咖啡飲品":
             info = f"為您列出星巴克精選飲品菜單：\n"
         else:
-            info = f"您找到「{rate_str}」的相關飲品結果：\n"
+            info = f"為您找到「{rate_str}」的相關飲品結果：\n"
         info += "━━━━━━━━━━━━━━━━━\n"
         
         result = ""
@@ -68,24 +71,20 @@ def webhook():
         
         for doc in docs:
             drink_dict = doc.to_dict()
-            db_type = str(drink_dict.get("type", ""))
-            db_name = str(drink_dict.get("name", ""))
-         
-            if rate_str == "" or (rate_str in db_type) or (rate_str in db_name):
-                found_any = True
-        
-                price = drink_dict.get("how much(large size)", drink_dict.get("how much", "暫無資料"))
-                coffeein = drink_dict.get("coffeein", "暫無資料")
-             
-                result += f"飲品名稱：{db_name}\n"
-                result += f"價格(大杯)：{price} 元\n"
-                result += f"咖啡因含量：{coffeein} mg\n"
-                result += "---------------------------------\n"
+            db_name = str(drink_dict.get("name", doc.id)).strip()
+            price = drink_dict.get("how much(large size)", drink_dict.get("how much", "暫無資料"))
+            coffeein = drink_dict.get("coffeein", "暫無資料") 
+            
+            found_any = True
+            result += f"飲品名稱：{db_name}\n"
+            result += f"價格(大杯)：{price} 元\n"
+            result += f"咖啡因含量：{coffeein} mg\n"
+            result += "---------------------------------\n"
                 
         if found_any:
             info += result
         else:
-            info = f"抱歉，目前還沒有與「{rate_str}」相關的飲品。您可以試試搜尋其他飲品！"
+            info += f"抱歉，目前在「{target_collection}」分類中尚未找到飲料。請確認 Firebase 資料夾名稱是否正確。"
             
         return make_response(jsonify({"fulfillmentText": info}))
 
