@@ -47,43 +47,47 @@ def webhook():
         parameters = req["queryResult"].get("parameters", {})
         rate = parameters.get("type", "")
         
-        if not rate:
-            return make_response(jsonify({"fulfillmentText": "您打算喝甚麼種類的飲品呢？\n(例如：那堤、咖啡、星冰樂)"}))
+        # 處理 Dialogflow 有時候把參數變成 list 的狀況 (防卡死機制)
+        if isinstance(rate, list):
+            rate = rate[0] if len(rate) > 0 else ""
+            
+        rate_str = str(rate).strip()
+        
+        db = firestore.client()
+        collection_ref = db.collection("星巴克")
+        docs = collection_ref.get()
+        
+        if rate_str == "":
+            info = f"為您列出星巴克精選飲品菜單：\n"
+        else:
+            info = f"您找到「{rate_str}」的相關飲品結果：\n"
+        info += "━━━━━━━━━━━━━━━━━\n"
+        
+        result = ""
+        found_any = False
+        
+        for doc in docs:
+            drink_dict = doc.to_dict()
+            db_type = str(drink_dict.get("type", ""))
+            db_name = str(drink_dict.get("name", ""))
+         
+            if rate_str == "" or (rate_str in db_type) or (rate_str in db_name):
+                found_any = True
+        
+                price = drink_dict.get("how much(large size)", drink_dict.get("how much", "暫無資料"))
+                coffeein = drink_dict.get("coffeein", "暫無資料")
+             
+                result += f"飲品名稱：{db_name}\n"
+                result += f"價格(大杯)：{price} 元\n"
+                result += f"咖啡因含量：{coffeein} mg\n"
+                result += "---------------------------------\n"
                 
-            db = firestore.client()
-            collection_ref = db.collection("星巴克")
-            docs = collection_ref.get()
+        if found_any:
+            info += result
+        else:
+            info = f"抱歉，目前還沒有與「{rate_str}」相關的飲品。您可以試試搜尋其他飲品！"
             
-            info = f"為您找到「{rate}」的相關飲品結果：\n"
-            info += "━━━━━━━━━━━━━━━\n" # 分隔線
-            
-            result = ""
-            found_any = False
-            rate_str = str(rate).strip()
-            
-            for doc in docs:
-                drink_dict = doc.to_dict()
-                db_type = str(drink_dict.get("type", ""))
-                db_name = str(drink_dict.get("name", ""))
-              
-                if rate_str in db_type or rate_str in db_name:
-                    found_any = True
-                    
-                    price = drink_dict.get("how much(large size)", "暫無資料")
-                    caffeine = drink_dict.get("coffeein", "暫無資料")
-                  
-                    result += f"飲品：{db_name}\n"
-                    result += f"價格：{price} 元\n"
-                    result += f"咖啡因：{caffeine} mg\n"
-                    result += "--------------------------------\n"
-                    
-            if found_any:
-                info += result
-                info += "\n點擊下方選單可以查詢更多資訊喔！"
-            else:
-                info = f"抱歉，我找不到「{rate_str}」。\n試試看搜尋「那堤」或「咖啡」？"
-
-            return make_response(jsonify({"fulfillmentText": info}))
+        return make_response(jsonify({"fulfillmentText": info}))
 
 @app.route("/menu")
 def menu():
