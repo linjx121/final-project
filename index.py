@@ -12,17 +12,26 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# 檢查 Firebase 是否已經初始化過，避免重複初始化錯誤
 if not firebase_admin._apps:
-    # 優先嘗試讀取雲端環境變數
     firebase_config = os.getenv('FIREBASE_CONFIG')
     
     if firebase_config:
-        # 如果有環境變數（Vercel 環境），將字串轉回字典解析
-        cred_dict = json.loads(firebase_config)
-        cred = credentials.Certificate(cred_dict)
+        try:
+            # 第一次解析 JSON
+            cred_dict = json.loads(firebase_config)
+            
+            # 關鍵防錯：如果解析出來還是字串（通常是因為 Vercel 變數外層多了引號），就再解析一次
+            if isinstance(cred_dict, str):
+                cred_dict = json.loads(cred_dict)
+                
+            cred = credentials.Certificate(cred_dict)
+            print("成功使用雲端環境變數初始化 Firebase")
+        except Exception as e:
+            print(f"環境變數解析失敗，錯誤原因: {e}")
+            # 備用方案：如果環境變數真的壞了，嘗試讀取本地檔案
+            cred = credentials.Certificate("serviceAccountKey.json")
     else:
-        # 如果沒有環境變數（本地開發環境），則讀取本地檔案
+        # 本地開發環境
         cred = credentials.Certificate("serviceAccountKey.json")
         
     firebase_admin.initialize_app(cred)
